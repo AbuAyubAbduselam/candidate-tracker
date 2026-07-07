@@ -415,7 +415,7 @@ export default function App() {
             </div>
 
             <div className="flex w-full items-center gap-2 sm:w-auto">
-              {isAgencyConfigured && (
+              {isAgencyConfigured() && (
                 <button
                   type="button"
                   onClick={syncAll}
@@ -442,7 +442,7 @@ export default function App() {
                 </button>
               )}
 
-              {isAgencyConfigured && (
+              {isAgencyConfigured() && (
                 <button
                   type="button"
                   onClick={() => setPhoneModalOpen(true)}
@@ -539,7 +539,7 @@ export default function App() {
             onUploadScan={uploadScan}
             onDelete={deleteCandidate}
             onSync={syncCandidate}
-            agencyEnabled={isAgencyConfigured}
+            agencyEnabled={isAgencyConfigured()}
           />
         )}
 

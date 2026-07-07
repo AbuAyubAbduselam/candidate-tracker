@@ -66,7 +66,7 @@ export default function CandidateForm({ open, onClose, onSubmit }) {
 
   // Debounced agency lookup as the user types a passport number / labour ID.
   useEffect(() => {
-    if (!open || !isAgencyConfigured) return
+    if (!open || !isAgencyConfigured()) return
     const value = form.passport_number.trim()
     if (value.length < 4) {
       setAgency((a) => (a.status === 'idle' ? a : { status: 'idle' }))
@@ -203,7 +203,7 @@ export default function CandidateForm({ open, onClose, onSubmit }) {
           </div>
 
           {/* Agency database lookup — appears as the passport number is typed */}
-          {isAgencyConfigured && agency.status !== 'idle' && (
+          {isAgencyConfigured() && agency.status !== 'idle' && (
             <div className="-mt-1">
               {agency.status === 'searching' && (
                 <p className="flex items-center gap-2 text-xs font-medium text-slate-500">
