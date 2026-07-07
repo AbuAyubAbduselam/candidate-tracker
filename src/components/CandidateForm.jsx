@@ -25,7 +25,9 @@ const EMPTY = {
   ticket_date: null,
   lmis: '',
   wokala: '',
+  // Manual upload (set via the file input); agency scan is stored separately.
   passport_scan_url: '',
+  agency_passport_scan_url: '',
 }
 
 const fieldCls =
@@ -110,7 +112,7 @@ export default function CandidateForm({ open, onClose, onSubmit }) {
       ticket_date: c.ticket_date || f.ticket_date,
       lmis: c.lmis || f.lmis,
       wokala: c.wokala || f.wokala,
-      passport_scan_url: c.passport_scan_url || f.passport_scan_url,
+      agency_passport_scan_url: c.agency_passport_scan_url || f.agency_passport_scan_url,
     }))
     setAgency({ status: 'imported', candidate: c })
   }

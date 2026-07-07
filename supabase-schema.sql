@@ -38,7 +38,8 @@ create table if not exists public.candidates (
   traveled         boolean default false,
   payment          text,
   amount           numeric,
-  passport_scan_url text
+  passport_scan_url text,
+  agency_passport_scan_url text
 );
 
 -- 1b. Add the follow-up columns to an EXISTING table (safe to re-run) --------
@@ -60,7 +61,9 @@ alter table public.candidates
   add column if not exists tasheer_informed boolean default false,
   add column if not exists ticket_informed  boolean default false,
   add column if not exists payment          text,
-  add column if not exists amount           numeric;
+  add column if not exists amount           numeric,
+  add column if not exists passport_scan_url text,
+  add column if not exists agency_passport_scan_url text;
 
 -- 2. Row Level Security ------------------------------------------------------
 -- The frontend uses the public "anon" key, so we open access for the anon role.

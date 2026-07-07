@@ -43,7 +43,7 @@ returns table (
   ticket_date       date,
   lmis              text,
   wokala            text,
-  passport_scan_url text
+  agency_passport_scan_url text
 )
 language sql
 security definer
@@ -71,7 +71,7 @@ as $$
     c.ticket_date                                                     as ticket_date,
     c.lmis                                                            as lmis,
     c.wokala                                                          as wokala,
-    case when c.passport_scan ~ '^https?://' then c.passport_scan end as passport_scan_url
+    case when c.passport_scan ~ '^https?://' then c.passport_scan end as agency_passport_scan_url
   from public.candidates c
   where lower(btrim(c.passport_no)) = lower(btrim(p_query))
      or lower(btrim(c.labour_id))   = lower(btrim(p_query))
@@ -115,7 +115,7 @@ returns table (
   ticket_date       date,
   lmis              text,
   wokala            text,
-  passport_scan_url text
+  agency_passport_scan_url text
 )
 language sql
 security definer
@@ -147,7 +147,7 @@ as $$
     c.ticket_date                                                     as ticket_date,
     c.lmis                                                            as lmis,
     c.wokala                                                          as wokala,
-    case when c.passport_scan ~ '^https?://' then c.passport_scan end as passport_scan_url
+    case when c.passport_scan ~ '^https?://' then c.passport_scan end as agency_passport_scan_url
   from public.candidates c, q
   where q.last8 <> ''
     and right(regexp_replace(coalesce(c.narrative_phone_no, ''), '\D', '', 'g'), 8) = q.last8

@@ -243,6 +243,8 @@ export const COLUMNS = [
   { key: 'name', label: 'Full Name', type: 'text', primary: true },
   { key: 'passport_number', label: 'Passport Number', type: 'text' },
   { key: 'labour_id', label: 'Labour ID', type: 'text' },
+  // Shows the manual tracker upload if present, else the agency's scan.
+  { key: 'passport_scan_url', label: 'Passport Scan', type: 'scan' },
   // Manual-only fields — NOT imported or synced from the agency site.
   { key: 'narrative', label: 'Narrative Name', type: 'text' },
   { key: 'narrative_phone', label: 'Narrative Phone', type: 'text' },

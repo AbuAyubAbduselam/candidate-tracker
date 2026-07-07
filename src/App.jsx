@@ -27,7 +27,7 @@ const SYNC_FIELDS = [
   'ticket_date',
   'lmis',
   'wokala',
-  'passport_scan_url',
+  'agency_passport_scan_url',
 ]
 
 // Agency fields written into the tracker on import (same set as sync, plus the
@@ -52,7 +52,7 @@ const IMPORT_FIELDS = [
   'ticket_date',
   'lmis',
   'wokala',
-  'passport_scan_url',
+  'agency_passport_scan_url',
 ]
 
 // Build a tracker insert row from an agency candidate record.

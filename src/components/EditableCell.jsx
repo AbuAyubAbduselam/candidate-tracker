@@ -208,6 +208,67 @@ function FileCell({ value, onUpload }) {
 }
 
 /* --------------------------------------------------------------------------
+ * Passport scan cell — shows the manual tracker upload if present, otherwise
+ * the agency's scan. Uploading always sets the manual copy (which then wins).
+ * ------------------------------------------------------------------------ */
+function ScanCell({ candidate, onUpload }) {
+  const inputRef = useRef(null)
+  const [busy, setBusy] = useState(false)
+
+  const manual = candidate.passport_scan_url
+  const agency = candidate.agency_passport_scan_url
+  const url = manual || agency
+  const source = manual ? 'Manual' : agency ? 'Agency' : null
+
+  const handle = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBusy(true)
+    try {
+      await onUpload(file)
+    } finally {
+      setBusy(false)
+      e.target.value = ''
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {url ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
+        >
+          View
+        </a>
+      ) : (
+        <span className="px-1 text-sm text-slate-400">—</span>
+      )}
+      {source && (
+        <span
+          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+            manual ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+          }`}
+        >
+          {source}
+        </span>
+      )}
+      <input ref={inputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handle} />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-60"
+      >
+        {busy ? 'Uploading…' : manual ? 'Replace' : 'Upload'}
+      </button>
+    </div>
+  )
+}
+
+/* --------------------------------------------------------------------------
  * Double-click gate: shows a read-only display until double-clicked, then the
  * matching editor. Booleans toggle directly on double-click.
  * ------------------------------------------------------------------------ */
@@ -272,6 +333,10 @@ export default function CellEditor({ column, candidate, onSaveField, onUploadSca
 
   if (column.type === 'file') {
     return <FileCell value={value} onUpload={(file) => onUploadScan(candidate.id, file)} />
+  }
+
+  if (column.type === 'scan') {
+    return <ScanCell candidate={candidate} onUpload={(file) => onUploadScan(candidate.id, file)} />
   }
 
   return (
