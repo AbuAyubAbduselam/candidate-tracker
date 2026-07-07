@@ -6,12 +6,24 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { COLUMNS, AVAILABILITY_STATUS_OPTIONS, AVAILABILITY_STYLES } from '../constants'
+import {
+  COLUMNS,
+  AVAILABILITY_STATUS_OPTIONS,
+  AVAILABILITY_STYLES,
+  SELECTED_BY_OPTIONS,
+} from '../constants'
 import CellEditor from './EditableCell'
 
 /* Availability tabs — filter candidates by availability status. */
 const GROUP_KEY = 'availability_status'
 const NO_STATUS = '__none__'
+
+/* Sub-tabs inside the "Selected" tab — filter by the selector office
+   (`selected_by`). */
+const SELECTED_TAB = 'Selected'
+const SELECTOR_KEY = 'selected_by'
+const ALL_SELECTORS = '__all__'
+const NO_SELECTOR = '__noselector__'
 
 // These columns only make sense once a candidate is selected, so they're shown
 // only on the "Selected" tab.
@@ -21,6 +33,7 @@ const SELECTED_ONLY_KEYS = new Set([
   'tasheer_informed',
   'visa_status',
   'selected_by',
+  'selected_at',
   'ticket',
   'ticket_date',
   'ticket_informed',
@@ -29,6 +42,51 @@ const SELECTED_ONLY_KEYS = new Set([
   'payment',
   'amount',
 ])
+
+// First availability status that actually has candidates (falls back to the
+// first option). Used to pick the initial tab and its default sort.
+function firstPopulatedStatus(candidates) {
+  return (
+    AVAILABILITY_STATUS_OPTIONS.find((s) => candidates.some((c) => (c[GROUP_KEY] || '') === s)) ||
+    AVAILABILITY_STATUS_OPTIONS[0]
+  )
+}
+
+// The Selected tab defaults to newest contract first (selected_at descending);
+// every other tab starts unsorted.
+function defaultSortFor(status) {
+  return status === SELECTED_TAB ? [{ id: 'selected_at', desc: true }] : []
+}
+
+// Group digits, keep up to 2 decimals — used for the payment amount totals.
+function formatAmount(n) {
+  return (n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
+
+// Build the selector-office sub-tabs from the Selected candidates. Preserves the
+// canonical SELECTED_BY_OPTIONS order, then appends any extra values, then a
+// "No selector" bucket. Returns { total, tabs }.
+function buildSelectorTabs(candidates) {
+  const counts = new Map()
+  for (const c of candidates) {
+    if ((c[GROUP_KEY] || '') !== SELECTED_TAB) continue
+    const v = (c[SELECTOR_KEY] || '').trim() || NO_SELECTOR
+    counts.set(v, (counts.get(v) || 0) + 1)
+  }
+  const total = [...counts.values()].reduce((a, b) => a + b, 0)
+  const ordered = SELECTED_BY_OPTIONS.filter((s) => counts.has(s)).map((s) => ({
+    key: s,
+    label: s,
+    count: counts.get(s),
+  }))
+  const extra = [...counts.keys()]
+    .filter((k) => k !== NO_SELECTOR && !SELECTED_BY_OPTIONS.includes(k))
+    .map((k) => ({ key: k, label: k, count: counts.get(k) }))
+  const none = counts.get(NO_SELECTOR)
+    ? [{ key: NO_SELECTOR, label: 'No selector', count: counts.get(NO_SELECTOR) }]
+    : []
+  return { total, tabs: [...ordered, ...extra, ...none] }
+}
 
 // Always show the three canonical statuses; append any extra/none statuses
 // found in the data so no candidate is unreachable.
@@ -146,6 +204,18 @@ const numericSort = (rowA, rowB, columnId) => {
   return num(rowA.getValue(columnId)) - num(rowB.getValue(columnId))
 }
 
+/* Date/timestamp sort — parses plain dates and full timestamps; missing values
+   sort to the bottom (they become the smallest, so last in a desc sort). */
+const dateSort = (rowA, rowB, columnId) => {
+  const ms = (v) => {
+    if (!v) return -Infinity
+    const iso = typeof v === 'string' && !v.includes('T') ? `${v}T00:00:00` : v
+    const n = Date.parse(iso)
+    return Number.isNaN(n) ? -Infinity : n
+  }
+  return ms(rowA.getValue(columnId)) - ms(rowB.getValue(columnId))
+}
+
 export default function CandidateTable({
   candidates,
   onSaveField,
@@ -154,20 +224,73 @@ export default function CandidateTable({
   onSync,
   agencyEnabled = false,
 }) {
-  const [sorting, setSorting] = useState([])
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 })
-  const [activeStatus, setActiveStatus] = useState(
-    () =>
-      AVAILABILITY_STATUS_OPTIONS.find((s) => candidates.some((c) => (c[GROUP_KEY] || '') === s)) ||
-      AVAILABILITY_STATUS_OPTIONS[0],
-  )
+  const [activeStatus, setActiveStatus] = useState(() => firstPopulatedStatus(candidates))
+  const [sorting, setSorting] = useState(() => defaultSortFor(firstPopulatedStatus(candidates)))
+  // Which selector-office sub-tab is active (only used on the Selected tab).
+  const [activeSelector, setActiveSelector] = useState(ALL_SELECTORS)
+  // Top-level travel filter — 'untraveled' (default) shows everyone whose
+  // traveled value is not Yes; 'traveled' shows only traveled === true.
+  const [activeTraveled, setActiveTraveled] = useState('untraveled')
 
-  const tabs = useMemo(() => buildTabs(candidates), [candidates])
-  const visibleCandidates = useMemo(
-    () => candidates.filter((c) => (c[GROUP_KEY] || NO_STATUS) === activeStatus),
-    [candidates, activeStatus],
+  // Everything below the travel tabs operates on this pre-filtered set, so the
+  // availability tabs, office sub-tabs and counts all reflect the travel view.
+  const travelFiltered = useMemo(
+    () =>
+      candidates.filter((c) =>
+        activeTraveled === 'traveled' ? c.traveled === true : c.traveled !== true,
+      ),
+    [candidates, activeTraveled],
   )
+  const travelCounts = useMemo(() => {
+    const traveled = candidates.reduce((n, c) => n + (c.traveled === true ? 1 : 0), 0)
+    return { traveled, untraveled: candidates.length - traveled }
+  }, [candidates])
+
+  const tabs = useMemo(() => buildTabs(travelFiltered), [travelFiltered])
+  const selectorInfo = useMemo(() => buildSelectorTabs(travelFiltered), [travelFiltered])
+  const onSelected = activeStatus === SELECTED_TAB
+
+  const visibleCandidates = useMemo(() => {
+    const list = travelFiltered.filter((c) => (c[GROUP_KEY] || NO_STATUS) === activeStatus)
+    if (!onSelected || activeSelector === ALL_SELECTORS) return list
+    return list.filter((c) => ((c[SELECTOR_KEY] || '').trim() || NO_SELECTOR) === activeSelector)
+  }, [travelFiltered, activeStatus, onSelected, activeSelector])
   const activeTab = tabs.find((t) => t.key === activeStatus)
+
+  // Payment tally for untraveled + Selected candidates: Paid vs Not Paid
+  // (Not Paid = any payment value other than 'Paid', including blank). Also sums
+  // the amount column into Total, Paid and Unpaid (= Total − Paid).
+  const paymentSummary = useMemo(() => {
+    if (activeTraveled !== 'untraveled') return null
+    const sel = candidates.filter(
+      (c) => c.traveled !== true && (c[GROUP_KEY] || '') === SELECTED_TAB,
+    )
+    const num = (v) => {
+      const n = parseFloat(v)
+      return Number.isNaN(n) ? 0 : n
+    }
+    const paidRows = sel.filter((c) => c.payment === 'Paid')
+    const totalAmount = sel.reduce((s, c) => s + num(c.amount), 0)
+    const paidAmount = paidRows.reduce((s, c) => s + num(c.amount), 0)
+    return {
+      paid: paidRows.length,
+      notPaid: sel.length - paidRows.length,
+      total: sel.length,
+      totalAmount,
+      paidAmount,
+      unpaidAmount: totalAmount - paidAmount,
+    }
+  }, [candidates, activeTraveled])
+
+  // If the active selector-office disappears (data changed, or we left the
+  // Selected tab), fall back to "All" so the list never silently empties.
+  useEffect(() => {
+    if (activeSelector === ALL_SELECTORS) return
+    if (!onSelected || !selectorInfo.tabs.some((t) => t.key === activeSelector)) {
+      setActiveSelector(ALL_SELECTORS)
+    }
+  }, [onSelected, activeSelector, selectorInfo])
 
   // The Selected-workflow columns only show on the "Selected" tab.
   const activeColumns = useMemo(
@@ -187,7 +310,9 @@ export default function CandidateTable({
           ? optionOrderSort(col.options)
           : col.type === 'number'
             ? numericSort
-            : 'auto',
+            : col.type === 'date' || col.format === 'date'
+              ? dateSort
+              : 'auto',
       meta: { primary: col.primary },
       cell: ({ row, table }) => (
         <CellEditor
@@ -317,6 +442,42 @@ export default function CandidateTable({
 
   return (
     <>
+      {/* Top-level travel tabs — Untraveled (default) vs Traveled */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {[
+          { key: 'untraveled', label: 'Untraveled', count: travelCounts.untraveled },
+          { key: 'traveled', label: 'Traveled', count: travelCounts.traveled },
+        ].map((t) => {
+          const active = t.key === activeTraveled
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => {
+                setActiveTraveled(t.key)
+                setActiveSelector(ALL_SELECTORS)
+                setPagination((p) => ({ ...p, pageIndex: 0 }))
+              }}
+              aria-pressed={active}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ring-1 ring-inset transition ${
+                active
+                  ? 'bg-slate-900 text-white ring-slate-900 shadow-sm'
+                  : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {t.label}
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${
+                  active ? 'bg-white/25' : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                {t.count}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
       {/* Availability status tabs — always visible; click to filter the list */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {tabs.map((t) => {
@@ -328,7 +489,8 @@ export default function CandidateTable({
               type="button"
               onClick={() => {
                 setActiveStatus(t.key)
-                setSorting([])
+                setActiveSelector(ALL_SELECTORS)
+                setSorting(defaultSortFor(t.key))
                 setPagination((p) => ({ ...p, pageIndex: 0 }))
               }}
               aria-pressed={active}
@@ -350,6 +512,91 @@ export default function CandidateTable({
           )
         })}
       </div>
+
+      {/* Selector-office sub-tabs — only on the Selected tab; filter by who
+          selected the candidate (`selected_by`). */}
+      {onSelected && selectorInfo.total > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-2.5">
+          <span className="pl-1 pr-1 text-[11px] font-bold uppercase tracking-wide text-indigo-400">
+            Office
+          </span>
+          {[{ key: ALL_SELECTORS, label: 'All', count: selectorInfo.total }, ...selectorInfo.tabs].map(
+            (t) => {
+              const active = t.key === activeSelector
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => {
+                    setActiveSelector(t.key)
+                    setPagination((p) => ({ ...p, pageIndex: 0 }))
+                  }}
+                  aria-pressed={active}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ring-1 ring-inset transition ${
+                    active
+                      ? 'bg-indigo-600 text-white ring-indigo-600 shadow-sm'
+                      : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {t.label}
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                      active ? 'bg-white/25' : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {t.count}
+                  </span>
+                </button>
+              )
+            },
+          )}
+        </div>
+      )}
+
+      {/* Payment tally for untraveled Selected candidates: Paid vs Not Paid
+          counts, plus Total / Unpaid / Paid amount sums. */}
+      {onSelected && paymentSummary && paymentSummary.total > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+            Payment
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-100 px-3 py-1.5 font-semibold text-emerald-800 ring-1 ring-inset ring-emerald-200">
+            Paid
+            <span className="rounded-full bg-white/60 px-1.5 py-0.5 text-[11px] font-bold">
+              {paymentSummary.paid}
+            </span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-rose-100 px-3 py-1.5 font-semibold text-rose-800 ring-1 ring-inset ring-rose-200">
+            Not Paid
+            <span className="rounded-full bg-white/60 px-1.5 py-0.5 text-[11px] font-bold">
+              {paymentSummary.notPaid}
+            </span>
+          </span>
+
+          <span className="mx-1 hidden h-5 w-px bg-slate-200 sm:block" />
+          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+            Amount
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 font-semibold text-slate-700 ring-1 ring-inset ring-slate-200">
+            Total
+            <span className="rounded-full bg-white/70 px-1.5 py-0.5 text-[11px] font-bold">
+              {formatAmount(paymentSummary.totalAmount)}
+            </span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-100 px-3 py-1.5 font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">
+            Unpaid
+            <span className="rounded-full bg-white/60 px-1.5 py-0.5 text-[11px] font-bold">
+              {formatAmount(paymentSummary.unpaidAmount)}
+            </span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-100 px-3 py-1.5 font-semibold text-emerald-800 ring-1 ring-inset ring-emerald-200">
+            Paid
+            <span className="rounded-full bg-white/60 px-1.5 py-0.5 text-[11px] font-bold">
+              {formatAmount(paymentSummary.paidAmount)}
+            </span>
+          </span>
+        </div>
+      )}
 
       {visibleCandidates.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-14 text-center text-sm text-slate-500">

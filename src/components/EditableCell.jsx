@@ -8,6 +8,16 @@ function formatDate(iso) {
   return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+// Read-only agency dates arrive either as a plain date ("YYYY-MM-DD") or a full
+// timestamp ("…T…Z"). Show a friendly day/month/year for both.
+function formatReadonlyDate(v) {
+  if (!v) return ''
+  const iso = typeof v === 'string' && !v.includes('T') ? `${v}T00:00:00` : v
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return typeof v === 'string' ? v : ''
+  return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
 /* --------------------------------------------------------------------------
  * Read-only display of a value (shown until the cell is double-clicked).
  * ------------------------------------------------------------------------ */
@@ -324,9 +334,10 @@ export default function CellEditor({ column, candidate, onSaveField, onUploadSca
   const value = candidate[column.key]
 
   if (column.type === 'readonly') {
+    const display = column.format === 'date' ? formatReadonlyDate(value) : value
     return (
       <span className="block px-2.5 py-1.5 text-sm text-slate-500" title="From agency (read-only)">
-        {value || <span className="text-slate-400">—</span>}
+        {display || <span className="text-slate-400">—</span>}
       </span>
     )
   }

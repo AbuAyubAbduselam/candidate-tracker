@@ -263,12 +263,17 @@ export const COLUMNS = [
   { key: 'video_link', label: 'Video', type: 'link' },
   { key: 'cv_sent_to', label: 'CV Sent To', type: 'select', options: CV_SENT_TO_OPTIONS },
   { key: 'selected_by', label: 'Selected By', type: 'select', options: SELECTED_BY_OPTIONS },
+  // Agency-sourced contract date ("selectedAt"). Read-only; drives the default
+  // descending sort on the Selected tab.
+  { key: 'selected_at', label: 'Selected At', type: 'readonly', format: 'date' },
   { key: 'ticket', label: 'Ticket', type: 'select', options: TICKET_OPTIONS },
   { key: 'ticket_date', label: 'Ticket Date', type: 'date' },
   // Tracker-only yes/no flag.
   { key: 'ticket_informed', label: 'Ticket Informed', type: 'boolean' },
   { key: 'lmis', label: 'LMIS', type: 'select', options: LMIS_OPTIONS },
   { key: 'wokala', label: 'Wakala', type: 'select', options: WOKALA_OPTIONS },
+  // Yes/No travel flag — also drives the top-level Untraveled / Traveled tabs.
+  { key: 'traveled', label: 'Traveled', type: 'boolean' },
   // Tracker-only payment tracking.
   { key: 'payment', label: 'Payment', type: 'select', options: PAYMENT_OPTIONS },
   { key: 'amount', label: 'Amount', type: 'number' },
