@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase, isSupabaseConfigured, PASSPORT_BUCKET } from './lib/supabase'
 import { isAgencyConfigured, lookupAgencyCandidate, lookupAgencyByPhone } from './lib/agencySupabase'
+import { useAuth } from './lib/AuthContext'
 import { COLUMNS } from './constants'
 
 // Fields refreshed from the agency on sync. Passport number (the match key) is
@@ -149,6 +150,7 @@ function SetupBanner() {
 /* App                                                                        */
 /* -------------------------------------------------------------------------- */
 export default function App() {
+  const { user, signOut } = useAuth()
   const [candidates, setCandidates] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -469,6 +471,22 @@ export default function App() {
                 </svg>
                 <span className="hidden sm:inline">Register candidate</span>
                 <span className="sm:hidden">Add</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={signOut}
+                title={user ? `Sign out (${user.email})` : 'Sign out'}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-rose-600 active:scale-95"
+              >
+                <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.9">
+                  <path
+                    d="M13 6.5V5A1.5 1.5 0 0 0 11.5 3.5h-6A1.5 1.5 0 0 0 4 5v10a1.5 1.5 0 0 0 1.5 1.5h6A1.5 1.5 0 0 0 13 15v-1.5M8.5 10H17m0 0-2.5-2.5M17 10l-2.5 2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span className="hidden lg:inline">Sign out</span>
               </button>
             </div>
           </div>
