@@ -1,86 +1,148 @@
 import { useEffect, useRef, useState } from 'react'
-import { STATUS_STYLES, TASHEER_STYLES } from '../constants'
+import { SELECT_STYLES } from '../constants'
 
 function formatDate(iso) {
   if (!iso) return ''
   const d = new Date(`${iso}T00:00:00`)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString(undefined, {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
+  return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 /* --------------------------------------------------------------------------
- * Inline text / number / date editor — click the value to edit it.
+ * Read-only display of a value (shown until the cell is double-clicked).
  * ------------------------------------------------------------------------ */
-function InlineText({ value, type = 'text', placeholder = '—', onSave }) {
-  const [editing, setEditing] = useState(false)
+function Display({ column, value }) {
+  switch (column.type) {
+    case 'select': {
+      const styles = SELECT_STYLES[column.key]
+      const cls =
+        (styles && styles[value]) ||
+        (value ? 'bg-indigo-50 text-indigo-700 ring-indigo-200' : 'bg-slate-100 text-slate-400 ring-slate-200')
+      return (
+        <span
+          className={`inline-flex whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset ${cls}`}
+        >
+          {value || `${column.label}…`}
+        </span>
+      )
+    }
+    case 'boolean': {
+      const yes = value === true
+      return (
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset ${
+            yes ? 'bg-emerald-100 text-emerald-800 ring-emerald-200' : 'bg-slate-100 text-slate-600 ring-slate-200'
+          }`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${yes ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+          {yes ? 'Yes' : 'No'}
+        </span>
+      )
+    }
+    case 'date':
+      return (
+        <span className="block px-2.5 py-1.5 text-sm text-slate-800">
+          {formatDate(value) || <span className="text-slate-400">—</span>}
+        </span>
+      )
+    case 'link':
+      return value ? (
+        <a
+          href={value}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
+        >
+          <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M6.3 3.7A1 1 0 0 0 4.8 4.6v10.8a1 1 0 0 0 1.5.9l9-5.4a1 1 0 0 0 0-1.7l-9-5.5z" />
+          </svg>
+          Watch
+        </a>
+      ) : (
+        <span className="block px-2.5 py-1.5 text-sm text-slate-400">—</span>
+      )
+    default:
+      return (
+        <span className="block px-2.5 py-1.5 text-sm text-slate-800">
+          {value || <span className="text-slate-400">—</span>}
+        </span>
+      )
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Inline input editor (text / number / date / url). Auto-focuses; commits on
+ * blur or Enter, cancels on Escape. Calls onDone when finished.
+ * ------------------------------------------------------------------------ */
+function InlineInput({ value, type = 'text', onSave, onDone }) {
   const [draft, setDraft] = useState(value ?? '')
   const inputRef = useRef(null)
 
-  useEffect(() => setDraft(value ?? ''), [value])
   useEffect(() => {
-    if (editing) inputRef.current?.focus()
-  }, [editing])
+    inputRef.current?.focus()
+    inputRef.current?.select?.()
+  }, [])
 
   const commit = () => {
-    setEditing(false)
-    const next = draft === '' ? null : draft
-    if ((next ?? '') !== (value ?? '')) onSave(next)
+    let next = draft === '' ? null : draft
+    if (next !== null && type === 'number') {
+      const n = Number(next)
+      next = Number.isNaN(n) ? next : n
+    }
+    if (String(next ?? '') !== String(value ?? '')) onSave(next)
+    onDone?.()
   }
-  const cancel = () => {
-    setDraft(value ?? '')
-    setEditing(false)
-  }
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        type={type}
-        value={draft ?? ''}
-        inputMode={type === 'number' ? 'decimal' : undefined}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit()
-          else if (e.key === 'Escape') cancel()
-        }}
-        className="w-full min-w-[7rem] rounded-lg border border-indigo-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 shadow-sm outline-none ring-2 ring-indigo-100"
-      />
-    )
-  }
-
-  const display = type === 'date' ? formatDate(value) : value
 
   return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      title="Click to edit"
-      className="flex w-full items-center rounded-lg px-2.5 py-1.5 text-left text-sm text-slate-800 transition hover:bg-indigo-50/70 focus:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-    >
-      <span className={display ? '' : 'text-slate-400'}>{display || placeholder}</span>
-    </button>
+    <input
+      ref={inputRef}
+      type={type}
+      value={draft ?? ''}
+      inputMode={type === 'number' ? 'decimal' : undefined}
+      placeholder={type === 'url' ? 'https://…' : undefined}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit()
+        else if (e.key === 'Escape') onDone?.()
+      }}
+      className="w-full min-w-[8rem] rounded-lg border border-indigo-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 shadow-sm outline-none ring-2 ring-indigo-100"
+    />
   )
 }
 
 /* --------------------------------------------------------------------------
- * Coloured dropdown badge — used for Current Status & Tasheer.
+ * Coloured dropdown editor — opens immediately, commits on change / blur.
  * ------------------------------------------------------------------------ */
-function StatusSelect({ value, options, styles, placeholder, onSave }) {
-  const cls = styles[value] || 'bg-slate-100 text-slate-500 ring-slate-200'
+function SelectEditor({ value, options, styles, placeholder, onSave, onDone }) {
+  const cls = (styles && styles[value]) || (value ? 'bg-indigo-50 text-indigo-700 ring-indigo-200' : 'bg-white ring-indigo-200')
+  const opts = value && !options.includes(value) ? [value, ...options] : options
+  const ref = useRef(null)
+
+  useEffect(() => {
+    ref.current?.focus()
+    try {
+      ref.current?.showPicker?.()
+    } catch {
+      /* showPicker needs a user gesture in some browsers — ignore if blocked */
+    }
+  }, [])
+
   return (
     <div className="relative inline-flex">
       <select
+        ref={ref}
         value={value ?? ''}
-        onChange={(e) => onSave(e.target.value || null)}
-        className={`w-full max-w-[10rem] cursor-pointer appearance-none truncate rounded-full py-1.5 pl-3 pr-7 text-xs font-semibold ring-1 ring-inset outline-none transition focus:ring-2 ${cls}`}
+        onChange={(e) => {
+          onSave(e.target.value || null)
+          onDone?.()
+        }}
+        onBlur={onDone}
+        className={`w-auto cursor-pointer appearance-none whitespace-nowrap rounded-full py-1.5 pl-3 pr-7 text-xs font-semibold ring-2 ring-inset outline-none ${cls}`}
       >
         <option value="">{placeholder}…</option>
-        {options.map((o) => (
+        {opts.map((o) => (
           <option key={o} value={o}>
             {o}
           </option>
@@ -98,27 +160,6 @@ function StatusSelect({ value, options, styles, placeholder, onSave }) {
         />
       </svg>
     </div>
-  )
-}
-
-/* --------------------------------------------------------------------------
- * Yes / No toggle — used for Traveled.
- * ------------------------------------------------------------------------ */
-function BooleanToggle({ value, onSave }) {
-  const yes = value === true
-  return (
-    <button
-      type="button"
-      onClick={() => onSave(!yes)}
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset transition ${
-        yes
-          ? 'bg-emerald-100 text-emerald-800 ring-emerald-200 hover:bg-emerald-200'
-          : 'bg-slate-100 text-slate-600 ring-slate-200 hover:bg-slate-200'
-      }`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${yes ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-      {yes ? 'Yes' : 'No'}
-    </button>
   )
 }
 
@@ -153,13 +194,7 @@ function FileCell({ value, onUpload }) {
           View
         </a>
       )}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*,application/pdf"
-        className="hidden"
-        onChange={handle}
-      />
+      <input ref={inputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handle} />
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
@@ -173,37 +208,73 @@ function FileCell({ value, onUpload }) {
 }
 
 /* --------------------------------------------------------------------------
- * Dispatcher: pick the right editor for a column.
+ * Double-click gate: shows a read-only display until double-clicked, then the
+ * matching editor. Booleans toggle directly on double-click.
+ * ------------------------------------------------------------------------ */
+function EditableCell({ column, value, onSave }) {
+  const [active, setActive] = useState(false)
+  const done = () => setActive(false)
+
+  // Booleans have no sub-editor — double-click flips the value.
+  if (column.type === 'boolean') {
+    return (
+      <div
+        onDoubleClick={() => onSave(!(value === true))}
+        title="Double-click to toggle"
+        className="inline-block cursor-default select-none"
+      >
+        <Display column={column} value={value} />
+      </div>
+    )
+  }
+
+  if (active) {
+    if (column.type === 'select') {
+      return (
+        <SelectEditor
+          value={value}
+          options={column.options}
+          styles={SELECT_STYLES[column.key]}
+          placeholder={column.label}
+          onSave={onSave}
+          onDone={done}
+        />
+      )
+    }
+    const inputType = column.type === 'link' ? 'url' : column.type // text | number | date | url
+    return <InlineInput value={value} type={inputType} onSave={onSave} onDone={done} />
+  }
+
+  return (
+    <div
+      onDoubleClick={() => setActive(true)}
+      title="Double-click to edit"
+      className="w-full cursor-default select-none"
+    >
+      <Display column={column} value={value} />
+    </div>
+  )
+}
+
+/* --------------------------------------------------------------------------
+ * Dispatcher: pick the right cell for a column.
  * ------------------------------------------------------------------------ */
 export default function CellEditor({ column, candidate, onSaveField, onUploadScan }) {
   const value = candidate[column.key]
 
-  switch (column.type) {
-    case 'select':
-      return (
-        <StatusSelect
-          value={value}
-          options={column.options}
-          styles={column.key === 'current_status' ? STATUS_STYLES : TASHEER_STYLES}
-          placeholder={column.label}
-          onSave={(v) => onSaveField(candidate.id, column.key, v)}
-        />
-      )
-    case 'boolean':
-      return <BooleanToggle value={value} onSave={(v) => onSaveField(candidate.id, column.key, v)} />
-    case 'date':
-      return (
-        <InlineText value={value} type="date" onSave={(v) => onSaveField(candidate.id, column.key, v)} />
-      )
-    case 'file':
-      return <FileCell value={value} onUpload={(file) => onUploadScan(candidate.id, file)} />
-    default:
-      return (
-        <InlineText
-          value={value}
-          type={column.type}
-          onSave={(v) => onSaveField(candidate.id, column.key, v)}
-        />
-      )
+  if (column.type === 'readonly') {
+    return (
+      <span className="block px-2.5 py-1.5 text-sm text-slate-500" title="From agency (read-only)">
+        {value || <span className="text-slate-400">—</span>}
+      </span>
+    )
   }
+
+  if (column.type === 'file') {
+    return <FileCell value={value} onUpload={(file) => onUploadScan(candidate.id, file)} />
+  }
+
+  return (
+    <EditableCell column={column} value={value} onSave={(v) => onSaveField(candidate.id, column.key, v)} />
+  )
 }

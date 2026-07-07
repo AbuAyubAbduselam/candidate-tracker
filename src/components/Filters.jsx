@@ -1,4 +1,10 @@
-import { STATUS_OPTIONS, TASHEER_OPTIONS } from '../constants'
+import {
+  TASHEER_OPTIONS,
+  TICKET_OPTIONS,
+  MUSANED_STATUS_OPTIONS,
+  COC_STATUS_OPTIONS,
+  MEDICAL_STATUS_OPTIONS,
+} from '../constants'
 
 const selectCls =
   'w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-9 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'
@@ -19,9 +25,26 @@ function Chevron() {
   )
 }
 
+const EMPTY_FILTERS = {
+  search: '',
+  tasheer: '',
+  ticket: '',
+  musaned_status: '',
+  coc_status: '',
+  medical_status: '',
+  video: '',
+}
+
 export default function Filters({ filters, setFilters, total, shown }) {
   const update = (patch) => setFilters((f) => ({ ...f, ...patch }))
-  const hasActive = filters.status || filters.tasheer || filters.traveled || filters.search
+  const hasActive =
+    filters.search ||
+    filters.tasheer ||
+    filters.ticket ||
+    filters.musaned_status ||
+    filters.coc_status ||
+    filters.medical_status ||
+    filters.video
 
   return (
     <div className="rounded-2xl border border-white/60 bg-white/70 p-3 shadow-sm ring-1 ring-black/5 backdrop-blur sm:p-4">
@@ -52,12 +75,60 @@ export default function Filters({ filters, setFilters, total, shown }) {
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
           <div className="relative">
             <select
-              value={filters.status}
-              onChange={(e) => update({ status: e.target.value })}
+              value={filters.ticket}
+              onChange={(e) => update({ ticket: e.target.value })}
               className={selectCls}
             >
-              <option value="">All statuses</option>
-              {STATUS_OPTIONS.map((o) => (
+              <option value="">All tickets</option>
+              {TICKET_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+            <Chevron />
+          </div>
+
+          <div className="relative">
+            <select
+              value={filters.musaned_status}
+              onChange={(e) => update({ musaned_status: e.target.value })}
+              className={selectCls}
+            >
+              <option value="">All musaned</option>
+              {MUSANED_STATUS_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+            <Chevron />
+          </div>
+
+          <div className="relative">
+            <select
+              value={filters.coc_status}
+              onChange={(e) => update({ coc_status: e.target.value })}
+              className={selectCls}
+            >
+              <option value="">All COC</option>
+              {COC_STATUS_OPTIONS.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+            <Chevron />
+          </div>
+
+          <div className="relative">
+            <select
+              value={filters.medical_status}
+              onChange={(e) => update({ medical_status: e.target.value })}
+              className={selectCls}
+            >
+              <option value="">All medical</option>
+              {MEDICAL_STATUS_OPTIONS.map((o) => (
                 <option key={o} value={o}>
                   {o}
                 </option>
@@ -84,13 +155,13 @@ export default function Filters({ filters, setFilters, total, shown }) {
 
           <div className="relative">
             <select
-              value={filters.traveled}
-              onChange={(e) => update({ traveled: e.target.value })}
+              value={filters.video}
+              onChange={(e) => update({ video: e.target.value })}
               className={selectCls}
             >
-              <option value="">All travel</option>
-              <option value="yes">Traveled</option>
-              <option value="no">Not traveled</option>
+              <option value="">All video</option>
+              <option value="yes">Has video</option>
+              <option value="no">No video</option>
             </select>
             <Chevron />
           </div>
@@ -105,7 +176,7 @@ export default function Filters({ filters, setFilters, total, shown }) {
           {hasActive && (
             <button
               type="button"
-              onClick={() => setFilters({ search: '', status: '', tasheer: '', traveled: '' })}
+              onClick={() => setFilters(EMPTY_FILTERS)}
               className="text-xs font-semibold text-indigo-600 transition hover:text-indigo-800"
             >
               Clear filters
