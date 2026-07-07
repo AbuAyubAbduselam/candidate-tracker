@@ -15,6 +15,7 @@ const EMPTY = {
   medical_date: null,
   coc_status: '',
   musaned_status: '',
+  training: '',
   tasheer: '',
   tasheer_date: null,
   visa_status: '',
@@ -27,6 +28,8 @@ const EMPTY = {
   wokala: '',
   // Manual upload (set via the file input); agency scan is stored separately.
   passport_scan_url: '',
+  agency_avatar_url: '',
+  agency_photo_url: '',
   agency_passport_scan_url: '',
 }
 
@@ -112,6 +115,8 @@ export default function CandidateForm({ open, onClose, onSubmit }) {
       ticket_date: c.ticket_date || f.ticket_date,
       lmis: c.lmis || f.lmis,
       wokala: c.wokala || f.wokala,
+      agency_avatar_url: c.agency_avatar_url || f.agency_avatar_url,
+      agency_photo_url: c.agency_photo_url || f.agency_photo_url,
       agency_passport_scan_url: c.agency_passport_scan_url || f.agency_passport_scan_url,
     }))
     setAgency({ status: 'imported', candidate: c })

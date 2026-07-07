@@ -279,6 +279,135 @@ function ScanCell({ candidate, onUpload }) {
 }
 
 /* --------------------------------------------------------------------------
+ * Agency media gallery — the avatar, full-size photo and passport scan pulled
+ * from the agency site, grouped into one cell. The avatar is the column
+ * thumbnail; clicking it opens a lightbox with all three full images (each also
+ * links out to the original file).
+ * ------------------------------------------------------------------------ */
+const isPdf = (url) => /\.pdf(\?|#|$)/i.test(url || '')
+
+function GalleryCell({ candidate }) {
+  const [open, setOpen] = useState(false)
+
+  const items = [
+    { label: 'Avatar', url: candidate.agency_avatar_url },
+    { label: 'Photo', url: candidate.agency_photo_url },
+    { label: 'Passport Scan', url: candidate.agency_passport_scan_url },
+  ].filter((it) => it.url)
+
+  // Close the lightbox on Escape.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e) => e.key === 'Escape' && setOpen(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+
+  if (items.length === 0) return <span className="px-1 text-sm text-slate-400">—</span>
+
+  const Thumb = ({ url, label, size, shape = 'rounded-lg' }) =>
+    isPdf(url) ? (
+      <span
+        className={`flex items-center justify-center bg-rose-50 ring-1 ring-slate-200 ${shape} ${size}`}
+        title={label}
+      >
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#e11d48" strokeWidth="1.6">
+          <path d="M5 2.5h6L15 6v11.5H5z" strokeLinejoin="round" />
+          <path d="M11 2.5V6h4" strokeLinejoin="round" />
+        </svg>
+      </span>
+    ) : (
+      <img
+        src={url}
+        alt={label}
+        title={label}
+        loading="lazy"
+        className={`object-cover ring-1 ring-slate-200 ${shape} ${size}`}
+      />
+    )
+
+  // The column thumbnail is the avatar; if the candidate has none, fall back to
+  // the first available image so the cell still previews something.
+  const thumb = candidate.agency_avatar_url
+    ? { url: candidate.agency_avatar_url, label: 'Avatar' }
+    : items[0]
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Click to view agency photos"
+        className="flex items-center gap-2 rounded-lg p-1 transition hover:bg-slate-100"
+      >
+        <Thumb url={thumb.url} label={thumb.label} size="h-9 w-9" shape="rounded-full" />
+        <span className="text-xs font-semibold text-indigo-700">
+          View{items.length > 1 ? ` (${items.length})` : ''}
+        </span>
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm animate-fade"
+          onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}
+        >
+          <div className="animate-pop w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-slate-900">Agency photos</h3>
+                <p className="truncate text-xs text-slate-500">{candidate.name || 'Candidate'}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close"
+              >
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M5 5l10 10M15 5L5 15" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-3">
+              {items.map((it) => (
+                <a
+                  key={it.label}
+                  href={it.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 transition hover:border-indigo-300 hover:shadow-md"
+                >
+                  <div className="flex aspect-[3/4] items-center justify-center overflow-hidden bg-slate-100">
+                    {isPdf(it.url) ? (
+                      <span className="flex flex-col items-center gap-2 text-slate-500">
+                        <svg width="40" height="40" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.3">
+                          <path d="M5 2.5h6L15 6v11.5H5z" strokeLinejoin="round" />
+                          <path d="M11 2.5V6h4" strokeLinejoin="round" />
+                        </svg>
+                        <span className="text-xs font-semibold">Open PDF</span>
+                      </span>
+                    ) : (
+                      <img
+                        src={it.url}
+                        alt={it.label}
+                        className="h-full w-full object-contain transition group-hover:scale-[1.02]"
+                      />
+                    )}
+                  </div>
+                  <span className="border-t border-slate-200 px-3 py-2 text-center text-xs font-semibold text-slate-600">
+                    {it.label}
+                  </span>
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+/* --------------------------------------------------------------------------
  * Double-click gate: shows a read-only display until double-clicked, then the
  * matching editor. Booleans toggle directly on double-click.
  * ------------------------------------------------------------------------ */
@@ -348,6 +477,10 @@ export default function CellEditor({ column, candidate, onSaveField, onUploadSca
 
   if (column.type === 'scan') {
     return <ScanCell candidate={candidate} onUpload={(file) => onUploadScan(candidate.id, file)} />
+  }
+
+  if (column.type === 'gallery') {
+    return <GalleryCell candidate={candidate} />
   }
 
   return (

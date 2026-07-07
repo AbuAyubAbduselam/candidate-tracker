@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import {
   TASHEER_OPTIONS,
   TICKET_OPTIONS,
@@ -35,8 +36,18 @@ const EMPTY_FILTERS = {
   video: '',
 }
 
-export default function Filters({ filters, setFilters, total, shown }) {
+export default function Filters({ filters, setFilters, total, shown, searchCount = 0 }) {
   const update = (patch) => setFilters((f) => ({ ...f, ...patch }))
+
+  // Auto-grow the search box so a pasted list of passport numbers is visible,
+  // shrinking back to a single line when it's cleared.
+  const searchRef = useRef(null)
+  useEffect(() => {
+    const el = searchRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  }, [filters.search])
   const hasActive =
     filters.search ||
     filters.tasheer ||
@@ -52,7 +63,7 @@ export default function Filters({ filters, setFilters, total, shown }) {
         {/* Search */}
         <div className="relative">
           <svg
-            className="pointer-events-none absolute left-3 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-slate-400"
+            className="pointer-events-none absolute left-3 top-3 h-4.5 w-4.5 text-slate-400"
             width="18"
             height="18"
             viewBox="0 0 20 20"
@@ -63,11 +74,13 @@ export default function Filters({ filters, setFilters, total, shown }) {
             <circle cx="9" cy="9" r="6" />
             <path d="m17 17-3.5-3.5" strokeLinecap="round" />
           </svg>
-          <input
+          <textarea
+            ref={searchRef}
             value={filters.search}
             onChange={(e) => update({ search: e.target.value })}
-            placeholder="Search name, passport, labour ID…"
-            className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            rows={1}
+            placeholder="Search name, passport, labour ID — or paste a list of passport numbers"
+            className="block w-full resize-none overflow-y-auto rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm leading-6 text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
           />
         </div>
 
@@ -172,6 +185,11 @@ export default function Filters({ filters, setFilters, total, shown }) {
           <p className="text-xs font-medium text-slate-500">
             Showing <span className="font-bold text-slate-700">{shown}</span> of{' '}
             <span className="font-bold text-slate-700">{total}</span>
+            {searchCount > 1 && (
+              <span className="ml-1.5 rounded-full bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-600">
+                matching {searchCount} terms
+              </span>
+            )}
           </p>
           {hasActive && (
             <button

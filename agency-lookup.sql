@@ -44,6 +44,8 @@ returns table (
   ticket_date       date,
   lmis              text,
   wokala            text,
+  agency_avatar_url text,
+  agency_photo_url  text,
   agency_passport_scan_url text
 )
 language sql
@@ -73,6 +75,10 @@ as $$
     c.ticket_date                                                     as ticket_date,
     c.lmis                                                            as lmis,
     c.wokala                                                          as wokala,
+    case when c.avatar ~ '^https?://'
+          and c.avatar <> 'https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png'
+         then c.avatar end                                            as agency_avatar_url,
+    case when c.full_size_photo ~ '^https?://' then c.full_size_photo end as agency_photo_url,
     case when c.passport_scan ~ '^https?://' then c.passport_scan end as agency_passport_scan_url
   from public.candidates c
   where lower(btrim(c.passport_no)) = lower(btrim(p_query))
@@ -118,6 +124,8 @@ returns table (
   ticket_date       date,
   lmis              text,
   wokala            text,
+  agency_avatar_url text,
+  agency_photo_url  text,
   agency_passport_scan_url text
 )
 language sql
@@ -151,6 +159,10 @@ as $$
     c.ticket_date                                                     as ticket_date,
     c.lmis                                                            as lmis,
     c.wokala                                                          as wokala,
+    case when c.avatar ~ '^https?://'
+          and c.avatar <> 'https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png'
+         then c.avatar end                                            as agency_avatar_url,
+    case when c.full_size_photo ~ '^https?://' then c.full_size_photo end as agency_photo_url,
     case when c.passport_scan ~ '^https?://' then c.passport_scan end as agency_passport_scan_url
   from public.candidates c, q
   where q.last8 <> ''

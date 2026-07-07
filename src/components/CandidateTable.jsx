@@ -304,7 +304,8 @@ export default function CandidateTable({
       id: col.key,
       accessorKey: col.key,
       header: col.label,
-      enableSorting: col.type !== 'file' && col.type !== 'link' && col.type !== 'scan',
+      enableSorting:
+        col.type !== 'file' && col.type !== 'link' && col.type !== 'scan' && col.type !== 'gallery',
       sortingFn:
         col.type === 'select'
           ? optionOrderSort(col.options)
@@ -408,7 +409,10 @@ export default function CandidateTable({
       {/* Card body: two-column grid of fields */}
       <div className="grid grid-cols-2 gap-x-3 gap-y-3">
         {activeColumns.slice(1).map((col) => (
-          <div key={col.key} className={col.type === 'file' || col.type === 'scan' ? 'col-span-2' : ''}>
+          <div
+            key={col.key}
+            className={col.type === 'file' || col.type === 'scan' || col.type === 'gallery' ? 'col-span-2' : ''}
+          >
             <div className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
               {col.label}
             </div>

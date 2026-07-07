@@ -23,6 +23,7 @@ create table if not exists public.candidates (
   medical_date     date,
   coc_status       text,
   musaned_status   text,
+  training         text,
   tasheer          text,
   tasheer_date     date,
   tasheer_informed boolean default false,
@@ -40,6 +41,8 @@ create table if not exists public.candidates (
   payment          text,
   amount           numeric,
   passport_scan_url text,
+  agency_avatar_url text,
+  agency_photo_url text,
   agency_passport_scan_url text
 );
 
@@ -51,6 +54,7 @@ alter table public.candidates
   add column if not exists medical_date   date,
   add column if not exists coc_status     text,
   add column if not exists musaned_status text,
+  add column if not exists training       text,
   add column if not exists visa_status    text,
   add column if not exists video_link     text,
   add column if not exists cv_sent_to     text,
@@ -65,6 +69,8 @@ alter table public.candidates
   add column if not exists payment          text,
   add column if not exists amount           numeric,
   add column if not exists passport_scan_url text,
+  add column if not exists agency_avatar_url text,
+  add column if not exists agency_photo_url text,
   add column if not exists agency_passport_scan_url text;
 
 -- 2. Row Level Security ------------------------------------------------------

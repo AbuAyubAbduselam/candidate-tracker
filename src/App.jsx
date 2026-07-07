@@ -28,6 +28,8 @@ const SYNC_FIELDS = [
   'ticket_date',
   'lmis',
   'wokala',
+  'agency_avatar_url',
+  'agency_photo_url',
   'agency_passport_scan_url',
 ]
 
@@ -54,6 +56,8 @@ const IMPORT_FIELDS = [
   'ticket_date',
   'lmis',
   'wokala',
+  'agency_avatar_url',
+  'agency_photo_url',
   'agency_passport_scan_url',
 ]
 
@@ -74,6 +78,19 @@ import CandidateTable from './components/CandidateTable'
 import PhoneImportModal from './components/PhoneImportModal'
 
 const sanitize = (name) => name.replace(/[^a-zA-Z0-9._-]/g, '_')
+
+// Turn the search box value into a list of lowercase terms.
+// A plain typed query (no list delimiters) stays a single term so partial /
+// multi-word matches like "john smith" keep working. As soon as the value
+// contains a newline, tab, comma or semicolon — i.e. a list was pasted from
+// Excel or elsewhere — it is split into one term per value (also on spaces) so
+// every pasted passport number becomes its own search term.
+function parseSearchTerms(search) {
+  const raw = search || ''
+  const isList = /[\n\r\t,;]/.test(raw)
+  const parts = isList ? raw.split(/[\s,;]+/) : [raw]
+  return parts.map((s) => s.trim().toLowerCase()).filter(Boolean)
+}
 
 /* -------------------------------------------------------------------------- */
 /* Toasts                                                                     */
@@ -362,15 +379,18 @@ export default function App() {
   }
 
   /* ---- filtering ---- */
+  const searchTerms = useMemo(() => parseSearchTerms(filters.search), [filters.search])
+
   const filtered = useMemo(() => {
     return candidates.filter((c) => {
-      if (filters.search) {
-        const q = filters.search.toLowerCase()
+      if (searchTerms.length) {
         const hay = [c.name, c.passport_number, c.labour_id, c.narrative, c.narrative_phone]
           .filter(Boolean)
           .join(' ')
           .toLowerCase()
-        if (!hay.includes(q)) return false
+        // Match if the row contains ANY of the terms (OR) — so a pasted list of
+        // passport numbers surfaces every matching candidate at once.
+        if (!searchTerms.some((t) => hay.includes(t))) return false
       }
       if (filters.tasheer && c.tasheer !== filters.tasheer) return false
       if (filters.ticket && c.ticket !== filters.ticket) return false
@@ -381,7 +401,7 @@ export default function App() {
       if (filters.video === 'no' && c.video_link) return false
       return true
     })
-  }, [candidates, filters])
+  }, [candidates, filters, searchTerms])
 
   const stats = useMemo(
     () => ({
@@ -522,7 +542,13 @@ export default function App() {
 
         {/* Filters */}
         <div className="mb-4">
-          <Filters filters={filters} setFilters={setFilters} total={candidates.length} shown={filtered.length} />
+          <Filters
+            filters={filters}
+            setFilters={setFilters}
+            total={candidates.length}
+            shown={filtered.length}
+            searchCount={searchTerms.length}
+          />
         </div>
 
         {/* Content */}

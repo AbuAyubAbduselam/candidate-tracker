@@ -19,6 +19,8 @@ export const COC_STATUS_OPTIONS = [
 
 export const MUSANED_STATUS_OPTIONS = ['Mubarek', 'Kalid', 'Paran', 'Placed', 'MRZ not clear']
 
+export const TRAINING_OPTIONS = ['In training', 'Waiting exam', 'Completed']
+
 export const TASHEER_OPTIONS = ['No', 'Booked', 'Done', 'Ready']
 
 export const VISA_STATUS_OPTIONS = [
@@ -154,6 +156,12 @@ export const MUSANED_STYLES = {
   'MRZ not clear': B.rose,
 }
 
+export const TRAINING_STYLES = {
+  'In training': B.amber,
+  'Waiting exam': B.sky,
+  Completed: B.emerald,
+}
+
 export const TASHEER_STYLES = {
   No: B.slate,
   Booked: B.sky,
@@ -225,6 +233,7 @@ export const SELECT_STYLES = {
   medical_status: MEDICAL_STYLES,
   coc_status: COC_STYLES,
   musaned_status: MUSANED_STYLES,
+  training: TRAINING_STYLES,
   tasheer: TASHEER_STYLES,
   visa_status: VISA_STYLES,
   ticket: TICKET_STYLES,
@@ -245,6 +254,9 @@ export const COLUMNS = [
   { key: 'labour_id', label: 'Labour ID', type: 'text' },
   // Shows the manual tracker upload if present, else the agency's scan.
   { key: 'passport_scan_url', label: 'Passport Scan', type: 'scan' },
+  // Agency media (avatar + full photo + passport scan) — click to view in a
+  // lightbox. Virtual column: reads the three agency_*_url fields directly.
+  { key: 'agency_media', label: 'Photos', type: 'gallery' },
   // Manual-only fields — NOT imported or synced from the agency site.
   { key: 'narrative', label: 'Narrative Name', type: 'text' },
   { key: 'narrative_phone', label: 'Narrative Phone', type: 'text' },
@@ -255,6 +267,7 @@ export const COLUMNS = [
   { key: 'medical_date', label: 'Medical Date', type: 'date' },
   { key: 'coc_status', label: 'COC Status', type: 'select', options: COC_STATUS_OPTIONS },
   { key: 'musaned_status', label: 'Musaned Status', type: 'select', options: MUSANED_STATUS_OPTIONS },
+  { key: 'training', label: 'Training', type: 'select', options: TRAINING_OPTIONS },
   { key: 'tasheer', label: 'Tasheer', type: 'select', options: TASHEER_OPTIONS },
   { key: 'tasheer_date', label: 'Tasheer Date', type: 'date' },
   // Tracker-only yes/no flag.
