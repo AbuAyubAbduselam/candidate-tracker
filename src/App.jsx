@@ -223,6 +223,21 @@ export default function App() {
     }
   }
 
+  // Bulk editor: set one field to the same value for many candidates at once.
+  async function bulkUpdateField(ids, field, value) {
+    if (!ids || ids.length === 0) return
+    const snapshot = candidates
+    const idSet = new Set(ids)
+    setCandidates((cs) => cs.map((c) => (idSet.has(c.id) ? { ...c, [field]: value } : c)))
+    const { error } = await supabase.from('candidates').update({ [field]: value }).in('id', ids)
+    if (error) {
+      setCandidates(snapshot)
+      pushToast('error', `Bulk update failed: ${error.message}`)
+    } else {
+      pushToast('success', `Updated “${field}” for ${ids.length} candidate${ids.length > 1 ? 's' : ''}`)
+    }
+  }
+
   async function uploadScan(id, file) {
     const path = `${id}/${Date.now()}-${sanitize(file.name)}`
     const { error: upErr } = await supabase.storage
@@ -567,6 +582,7 @@ export default function App() {
             onUploadScan={uploadScan}
             onDelete={deleteCandidate}
             onSync={syncCandidate}
+            onBulkUpdate={bulkUpdateField}
             agencyEnabled={isAgencyConfigured()}
           />
         )}

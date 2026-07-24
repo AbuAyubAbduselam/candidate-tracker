@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   flexRender,
   getCoreRowModel,
@@ -42,6 +42,57 @@ const SELECTED_ONLY_KEYS = new Set([
   'payment',
   'amount',
 ])
+
+// Image/URL columns are dropped from Excel/PDF exports — they're media, not
+// tabular data.
+const EXPORT_EXCLUDE_TYPES = new Set(['gallery', 'scan', 'file'])
+
+// Column types the bulk editor can set the same value for. Readonly / media
+// columns are excluded.
+const BULK_EDIT_TYPES = new Set(['text', 'number', 'select', 'date', 'boolean', 'link'])
+
+const BULK_INPUT_CLASS =
+  'w-56 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none transition focus:border-indigo-400'
+
+/* Value editor for the bulk updater — adapts to the chosen column's type. */
+function BulkValueInput({ col, value, onChange }) {
+  if (!col) {
+    return (
+      <input disabled placeholder="Choose a field first" className={`${BULK_INPUT_CLASS} opacity-60`} />
+    )
+  }
+  if (col.type === 'select') {
+    return (
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={BULK_INPUT_CLASS}>
+        <option value="">— clear —</option>
+        {col.options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+      </select>
+    )
+  }
+  if (col.type === 'boolean') {
+    return (
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={BULK_INPUT_CLASS}>
+        <option value="">— clear —</option>
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+    )
+  }
+  const inputType = col.type === 'date' ? 'date' : col.type === 'number' ? 'number' : 'text'
+  return (
+    <input
+      type={inputType}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={col.type === 'link' ? 'https://…' : 'New value (empty = clear)'}
+      className={BULK_INPUT_CLASS}
+    />
+  )
+}
 
 // First availability status that actually has candidates (falls back to the
 // first option). Used to pick the initial tab and its default sort.
@@ -162,6 +213,27 @@ function DeleteButton({ onDelete, name }) {
   )
 }
 
+/* Row-selection checkbox (supports an indeterminate "some selected" state for
+   the header select-all box). */
+function RowCheckbox({ checked, indeterminate = false, onChange, title }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = !checked && indeterminate
+  }, [checked, indeterminate])
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      title={title}
+      aria-label={title}
+      onClick={(e) => e.stopPropagation()}
+      className="h-4 w-4 cursor-pointer rounded border-slate-300 accent-indigo-600 focus:ring-indigo-500"
+    />
+  )
+}
+
 /* Sort chevrons shown in each sortable header. */
 function SortIndicator({ sorted }) {
   return (
@@ -222,9 +294,18 @@ export default function CandidateTable({
   onUploadScan,
   onDelete,
   onSync,
+  onBulkUpdate,
   agencyEnabled = false,
 }) {
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 })
+  // Row selection (keyed by candidate id via getRowId) + export busy flag.
+  const [rowSelection, setRowSelection] = useState({})
+  const [exporting, setExporting] = useState(false)
+  // Bulk editor (set one field to the same value across all selected rows).
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkField, setBulkField] = useState('')
+  const [bulkValue, setBulkValue] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
   const [activeStatus, setActiveStatus] = useState(() => firstPopulatedStatus(candidates))
   const [sorting, setSorting] = useState(() => defaultSortFor(firstPopulatedStatus(candidates)))
   // Which selector-office sub-tab is active (only used on the Selected tab).
@@ -300,6 +381,26 @@ export default function CandidateTable({
   )
 
   const columns = useMemo(() => {
+    const selectColumn = {
+      id: 'select',
+      enableSorting: false,
+      header: ({ table }) => (
+        <RowCheckbox
+          checked={table.getIsAllPageRowsSelected()}
+          indeterminate={table.getIsSomePageRowsSelected()}
+          onChange={table.getToggleAllPageRowsSelectedHandler()}
+          title="Select all on this page"
+        />
+      ),
+      cell: ({ row }) => (
+        <RowCheckbox
+          checked={row.getIsSelected()}
+          onChange={row.getToggleSelectedHandler()}
+          title="Select row"
+        />
+      ),
+    }
+
     const dataColumns = activeColumns.map((col) => ({
       id: col.key,
       accessorKey: col.key,
@@ -342,15 +443,17 @@ export default function CandidateTable({
       },
     })
 
-    return dataColumns
+    return [selectColumn, ...dataColumns]
   }, [activeColumns])
 
   const table = useReactTable({
     data: visibleCandidates,
     columns,
-    state: { sorting, pagination },
+    state: { sorting, pagination, rowSelection },
     onSortingChange: setSorting,
     onPaginationChange: setPagination,
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: true,
     getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -387,17 +490,100 @@ export default function CandidateTable({
 
   const sortedRows = table.getRowModel().rows
 
-  const renderCard = (c) => (
+  // Which columns land in the export — the visible data columns for the active
+  // tab, minus the media/URL columns.
+  const exportColumns = useMemo(
+    () => activeColumns.filter((c) => !EXPORT_EXCLUDE_TYPES.has(c.type)),
+    [activeColumns],
+  )
+  const selectedRows = table.getSelectedRowModel().rows
+  const selectedCount = selectedRows.length
+
+  // Lazy-load the heavy xlsx/jspdf bundle only when an export is triggered.
+  async function runExport(kind) {
+    const rows = table.getSelectedRowModel().rows.map((r) => r.original)
+    if (rows.length === 0) return
+    setExporting(true)
+    try {
+      const mod = await import('../lib/exportCandidates')
+      if (kind === 'excel') mod.exportCandidatesToExcel(rows, exportColumns)
+      else mod.exportCandidatesToPdf(rows, exportColumns)
+    } catch (err) {
+      console.error('Export failed', err)
+      window.alert(`Export failed: ${err?.message || err}`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  // Fields the bulk editor can set (visible, editable columns for this tab).
+  const editableColumns = useMemo(
+    () => activeColumns.filter((c) => BULK_EDIT_TYPES.has(c.type)),
+    [activeColumns],
+  )
+  const bulkCol = editableColumns.find((c) => c.key === bulkField)
+
+  // Close / reset the bulk editor whenever the selection empties (also fires on
+  // tab switches, which clear the selection).
+  useEffect(() => {
+    if (selectedCount === 0) {
+      setBulkOpen(false)
+      setBulkField('')
+      setBulkValue('')
+    }
+  }, [selectedCount])
+
+  // Apply the chosen value to every selected candidate.
+  async function applyBulk() {
+    if (!bulkCol) return
+    const ids = table.getSelectedRowModel().rows.map((r) => r.original.id)
+    if (ids.length === 0) return
+    let value = bulkValue
+    if (bulkCol.type === 'boolean') {
+      value = bulkValue === 'true' ? true : bulkValue === 'false' ? false : null
+    } else if (bulkValue === '') {
+      value = null
+    } else if (bulkCol.type === 'number') {
+      // Match the inline editor: store real numbers, keep raw text if unparseable.
+      const n = Number(bulkValue)
+      value = Number.isNaN(n) ? bulkValue : n
+    }
+    setBulkBusy(true)
+    try {
+      await onBulkUpdate(ids, bulkCol.key, value)
+      setBulkOpen(false)
+      setBulkField('')
+      setBulkValue('')
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  const renderCard = (row) => {
+    const c = row.original
+    const selected = row.getIsSelected()
+    return (
     <div
       key={c.id}
-      className="animate-pop rounded-2xl border border-white/60 bg-white/90 p-4 shadow-sm ring-1 ring-black/5 backdrop-blur"
+      className={`animate-pop rounded-2xl border bg-white/90 p-4 shadow-sm backdrop-blur ${
+        selected ? 'border-indigo-300 ring-2 ring-indigo-400' : 'border-white/60 ring-1 ring-black/5'
+      }`}
     >
       {/* Card header */}
       <div className="mb-3 flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
-        <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Name</div>
-          <div className="-ml-2.5 text-base font-bold text-slate-900">
-            <CellEditor column={COLUMNS[0]} candidate={c} onSaveField={onSaveField} onUploadScan={onUploadScan} />
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <div className="pt-1">
+            <RowCheckbox
+              checked={selected}
+              onChange={row.getToggleSelectedHandler()}
+              title="Select candidate"
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Name</div>
+            <div className="-ml-2.5 text-base font-bold text-slate-900">
+              <CellEditor column={COLUMNS[0]} candidate={c} onSaveField={onSaveField} onUploadScan={onUploadScan} />
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-0.5">
@@ -423,26 +609,40 @@ export default function CandidateTable({
         ))}
       </div>
     </div>
-  )
+    )
+  }
 
-  const renderLeafRow = (row) => (
-    <tr key={row.id} className="group bg-white transition hover:bg-indigo-50/40">
+  const renderLeafRow = (row) => {
+    const selected = row.getIsSelected()
+    return (
+    <tr
+      key={row.id}
+      className={`group transition ${selected ? 'bg-indigo-50/70' : 'bg-white hover:bg-indigo-50/40'}`}
+    >
       {row.getVisibleCells().map((cell) => {
         const isPrimary = cell.column.columnDef.meta?.primary
         const isActions = cell.column.id === 'actions'
+        const isSelect = cell.column.id === 'select'
         return (
           <td
             key={cell.id}
             className={`align-middle ${
-              isActions ? 'px-2 py-1.5 text-right' : 'px-1.5 py-1.5'
-            } ${isPrimary ? 'sticky left-0 z-10 bg-white font-semibold text-slate-900 group-hover:bg-indigo-50' : ''}`}
+              isActions ? 'px-2 py-1.5 text-right' : isSelect ? 'px-3 py-1.5 text-center' : 'px-1.5 py-1.5'
+            } ${
+              isPrimary
+                ? `sticky left-0 z-10 font-semibold text-slate-900 ${
+                    selected ? 'bg-indigo-50' : 'bg-white group-hover:bg-indigo-50'
+                  }`
+                : ''
+            }`}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </td>
         )
       })}
     </tr>
-  )
+    )
+  }
 
   return (
     <>
@@ -460,6 +660,7 @@ export default function CandidateTable({
               onClick={() => {
                 setActiveTraveled(t.key)
                 setActiveSelector(ALL_SELECTORS)
+                setRowSelection({})
                 setPagination((p) => ({ ...p, pageIndex: 0 }))
               }}
               aria-pressed={active}
@@ -495,6 +696,7 @@ export default function CandidateTable({
                 setActiveStatus(t.key)
                 setActiveSelector(ALL_SELECTORS)
                 setSorting(defaultSortFor(t.key))
+                setRowSelection({})
                 setPagination((p) => ({ ...p, pageIndex: 0 }))
               }}
               aria-pressed={active}
@@ -533,6 +735,7 @@ export default function CandidateTable({
                   type="button"
                   onClick={() => {
                     setActiveSelector(t.key)
+                    setRowSelection({})
                     setPagination((p) => ({ ...p, pageIndex: 0 }))
                   }}
                   aria-pressed={active}
@@ -602,6 +805,137 @@ export default function CandidateTable({
         </div>
       )}
 
+      {/* Selection toolbar — appears once one or more rows are ticked; exports
+          the selected candidates to Excel or PDF. */}
+      {selectedCount > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 p-2.5 shadow-sm">
+          <span className="inline-flex items-center gap-1.5 pl-1 text-sm font-semibold text-indigo-700">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 10l4 4 8-8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {selectedCount} selected
+          </span>
+          <span className="mx-1 hidden h-5 w-px bg-indigo-200 sm:block" />
+
+          <button
+            type="button"
+            onClick={() => runExport('excel')}
+            disabled={exporting}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 active:scale-95 disabled:opacity-60"
+          >
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M12 2.5H5.5A1.5 1.5 0 0 0 4 4v12a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 16 16V6.5z" strokeLinejoin="round" />
+              <path d="M12 2.5V6a1 1 0 0 0 1 1h3M7.5 10.5l5 4m0-4-5 4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Export Excel
+          </button>
+
+          <button
+            type="button"
+            onClick={() => runExport('pdf')}
+            disabled={exporting}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-rose-700 active:scale-95 disabled:opacity-60"
+          >
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M12 2.5H5.5A1.5 1.5 0 0 0 4 4v12a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 16 16V6.5z" strokeLinejoin="round" />
+              <path d="M12 2.5V6a1 1 0 0 0 1 1h3M7 11h6M7 13.5h4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Export PDF
+          </button>
+
+          {onBulkUpdate && (
+            <button
+              type="button"
+              onClick={() => setBulkOpen((v) => !v)}
+              aria-expanded={bulkOpen}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm transition active:scale-95 ${
+                bulkOpen
+                  ? 'bg-slate-900 text-white'
+                  : 'bg-slate-800 text-white hover:bg-slate-900'
+              }`}
+            >
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M13.5 3.5 16.5 6.5 7 16H4v-3z" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Bulk edit
+            </button>
+          )}
+
+          {exporting && (
+            <svg className="h-4 w-4 animate-spin text-indigo-500" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setRowSelection({})}
+            className="ml-auto inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* Bulk editor — set one field to the same value for every selected row. */}
+      {onBulkUpdate && bulkOpen && selectedCount > 0 && (
+        <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Field</span>
+              <select
+                value={bulkField}
+                onChange={(e) => {
+                  setBulkField(e.target.value)
+                  setBulkValue('')
+                }}
+                className={BULK_INPUT_CLASS}
+              >
+                <option value="">Choose field…</option>
+                {editableColumns.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">New value</span>
+              <BulkValueInput col={bulkCol} value={bulkValue} onChange={setBulkValue} />
+            </label>
+
+            <button
+              type="button"
+              onClick={applyBulk}
+              disabled={!bulkCol || bulkBusy}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 active:scale-95 disabled:opacity-50"
+            >
+              {bulkBusy && (
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                </svg>
+              )}
+              Apply to {selectedCount}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setBulkOpen(false)}
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            Applies to all {selectedCount} selected candidate{selectedCount > 1 ? 's' : ''}. Leave the value
+            empty to clear the field.
+          </p>
+        </div>
+      )}
+
       {visibleCandidates.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-14 text-center text-sm text-slate-500">
           No candidates with status “{activeTab?.label ?? activeStatus}”.
@@ -611,7 +945,7 @@ export default function CandidateTable({
           {/* ---------------------------------------------------------------- */}
           {/* MOBILE / TABLET: card layout (default)                          */}
           {/* ---------------------------------------------------------------- */}
-          <div className="space-y-3 lg:hidden">{sortedRows.map((row) => renderCard(row.original))}</div>
+          <div className="space-y-3 lg:hidden">{sortedRows.map((row) => renderCard(row))}</div>
 
           {/* ---------------------------------------------------------------- */}
           {/* DESKTOP: TanStack Table                                         */}
